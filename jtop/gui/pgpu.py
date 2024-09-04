@@ -81,6 +81,11 @@ class GPU(Page):
                                   type_value=float,
                                   color_text=curses.COLOR_GREEN,
                                   color_chart=[COLOR_GREY, curses.COLOR_GREEN])
+            if type_gpu == 'd':
+                chart_ram = Chart(jetson, "GPU Shared RAM", self.update_chart_ram,
+                                  type_value=float,
+                                  color_text=curses.COLOR_GREEN,
+                                  color_chart=[COLOR_GREY, curses.COLOR_GREEN])
             else:
                 chart_ram = None
             self.draw_gpus[gpu_name] = {'chart': chart, '3d_scaling': button_3d_scaling, 'ram': chart_ram}
@@ -102,11 +107,15 @@ class GPU(Page):
     def update_chart(self, jetson, name):
         # Decode GPU name
         gpu_name = name.split(" ")[1]
-        gpu_data = jetson.gpu[gpu_name]
+        # Try to find the GPU with the exact name, or with "GPU " prefix
+        gpu_data = jetson.gpu.get(gpu_name) or jetson.gpu.get(f"GPU {gpu_name}")
+        if not gpu_data:
+            # Remove the logging line entirely
+            return {'value': [0.0]}
         gpu_status = gpu_data['status']
         # Append in list
         return {
-            'value': [gpu_status['load']],
+            'value': [gpu_status.get('load', 0.0)],
         }
 
     def update_chart_ram(self, jetson, name):
@@ -141,14 +150,17 @@ class GPU(Page):
         for idx, (gpu_name, gpu_data) in enumerate(self.jetson.gpu.items()):
             chart = self.draw_gpus[gpu_name]['chart']
             chart_ram = self.draw_gpus[gpu_name]['ram']
-            gpu_status = gpu_data['status']
-            gpu_freq = gpu_data['freq']
+            gpu_status = gpu_data.get('status', {})
+            gpu_freq = gpu_data.get('freq', {})
             # Set size chart gpu
             size_x = [1, width // 2 - 2]
             size_y = [first + 2 + idx * (gpu_height + 1), first + 2 + (idx + 1) * (gpu_height - 3)]
             # Print status CPU
-            governor = gpu_freq.get('governor', '')
-            label_chart_gpu = "{percent: >3.0f}% - gov: {governor}".format(percent=gpu_status['load'], governor=governor)
+            governor = gpu_freq.get('governor', 'N/A')
+            label_chart_gpu = "{percent: >3.0f}% - gov: {governor}".format(
+                percent=gpu_status.get('load', 0),
+                governor=governor
+            )
             # Draw GPU chart
             chart.draw(self.stdscr, size_x, size_y, label=label_chart_gpu)
             # Draw GPU RAM chart
@@ -161,8 +173,8 @@ class GPU(Page):
             button_position = width // 4
             button_idx = 0
             # 3D scaling
-            scaling_string = "Active" if gpu_status['3d_scaling'] else "Disable"
-            scaling_status = NColors.green() if gpu_status['3d_scaling'] else curses.A_NORMAL
+            scaling_string = "Active" if gpu_status.get('3d_scaling', False) else "Disable"
+            scaling_status = NColors.green() if gpu_status.get('3d_scaling', False) else curses.A_NORMAL
             try:
                 self.stdscr.addstr(first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "3D scaling:", curses.A_BOLD)
                 self.draw_gpus[gpu_name]['3d_scaling'].update(first + 1 + (idx + 1) * gpu_height - 1, 12 + button_idx,
@@ -171,20 +183,20 @@ class GPU(Page):
                 pass
             button_idx += button_position
             # railgate status
-            railgate_string = "Active" if gpu_status['railgate'] else "Disable"
-            railgate_status = NColors.green() if gpu_status['railgate'] else curses.A_NORMAL
+            railgate_string = "Active" if gpu_status.get('railgate', False) else "Disable"
+            railgate_status = NColors.green() if gpu_status.get('railgate', False) else curses.A_NORMAL
             plot_name_info(self.stdscr, first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "Railgate", railgate_string, color=railgate_status)
             # self.stdscr.addstr(first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "Railgate:", curses.A_BOLD)
             # self.draw_gpus[gpu_name]['railgate'].update(first + 1 + (idx + 1) * gpu_height - 1, 10 + button_idx, railgate_string,
             #                                             key=key, mouse=mouse, color=railgate_status)
             button_idx += button_position
             # Power control
-            plot_name_info(self.stdscr, first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "Power ctrl", gpu_data['power_control'])
+            power_control = gpu_data.get('power_control', 'N/A')
+            plot_name_info(self.stdscr, first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "Power ctrl", power_control)
             button_idx += button_position
             # TPC PG Mask
             if 'tpc_pg_mask' in gpu_status:
                 tpc_pg_mask_string = "ON" if gpu_status['tpc_pg_mask'] else "OFF"
-                # tpc_pg_mask_status = NColors.green() if gpu_status['tpc_pg_mask'] else NColors.red()
                 plot_name_info(self.stdscr, first + 1 + (idx + 1) * gpu_height - 1, 1 + button_idx, "TPC PG", tpc_pg_mask_string)
                 button_idx += button_position
             # Check if GPC data is included

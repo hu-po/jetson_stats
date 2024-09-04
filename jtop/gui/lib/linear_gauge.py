@@ -119,20 +119,23 @@ def freq_gauge(stdscr, pos_y, pos_x, size, freq_data):
     # Current value in string
     curr_string = unit_to_string(freq_data['cur'], 'k', 'Hz')
     # If there is a min and a max
-    if 'max' in freq_data:
-        value = ((freq_data['cur'] - freq_data['min']) / (freq_data['max'] - freq_data['min'])) * 100 if freq_data['min'] != freq_data['max'] else 100
-        # Convert values data
-        data = {
-            'name': name,
-            'color': NColors.cyan(),
-            'online': freq_data['online'] if 'online' in freq_data else True,
-            'values': [(value, NColors.green())],
-            'mleft': unit_to_string(freq_data['min'], 'k', 'Hz') if 'min' in freq_data else "",
-            'mright': unit_to_string(freq_data['max'], 'k', 'Hz') if 'max' in freq_data else "",
-        }
-        basic_gauge(stdscr, pos_y, pos_x, size - 8, data, bar=":")
-        # Draw current frequency
-        stdscr.addstr(pos_y, pos_x + size - 6, curr_string, NColors.italic())
+    if 'min' in freq_data and 'max' in freq_data and 'cur' in freq_data:
+        if freq_data['max'] != freq_data['min']:
+            value = ((freq_data['cur'] - freq_data['min']) / (freq_data['max'] - freq_data['min'])) * 100
+        else:
+            value = 100
     else:
-        basic_gauge_simple(stdscr, pos_y, pos_x, size, freq_data)
+        value = 0  # or any default value you prefer
+    # Convert values data
+    data = {
+        'name': name,
+        'color': NColors.cyan(),
+        'online': freq_data['online'] if 'online' in freq_data else True,
+        'values': [(value, NColors.green())],
+        'mleft': unit_to_string(freq_data['min'], 'k', 'Hz') if 'min' in freq_data else "",
+        'mright': unit_to_string(freq_data['max'], 'k', 'Hz') if 'max' in freq_data else "",
+    }
+    basic_gauge(stdscr, pos_y, pos_x, size - 8, data, bar=":")
+    # Draw current frequency
+    stdscr.addstr(pos_y, pos_x + size - 6, curr_string, NColors.italic())
 # EOF

@@ -151,16 +151,56 @@ def find_igpu(igpu_path):
 
 
 def find_dgpu():
-    # Check if there are discrete gpu
-    # if not os.path.exists("/dev/nvidiactl") and not os.path.isdir("/dev/nvgpu-pci"):
-    #     return []
-    # https://enterprise-support.nvidia.com/s/article/Useful-nvidia-smi-Queries-2
     dgpu = {}
     if check_nvidia_smi():
         logger.info("NVIDIA SMI exist!")
+        cmd = Command(['nvidia-smi', '--query-gpu=name,memory.total,memory.free,memory.used', '--format=csv,noheader,nounits'])
+        try:
+            output = cmd()
+            for idx, line in enumerate(output):
+                name, total, free, used = line.strip().split(', ')
+                dgpu[f'GPU {idx}'] = {
+                    'type': 'discrete',
+                    'name': name,
+                    'memory': {
+                        'total': int(total),
+                        'free': int(free),
+                        'used': int(used)
+                    }
+                }
+        except (OSError, Command.CommandException):
+            logger.error("Failed to get GPU information from nvidia-smi")
     if dgpu:
         logger.info("Discrete GPU found")
     return dgpu
+
+
+def dgpu_read_status(gpu_id):
+    gpu = {'status': {'load': 0.0}}  # Initialize with default load
+    cmd = Command(['nvidia-smi', 
+                   f'--id={gpu_id}',
+                   '--query-gpu=utilization.gpu,temperature.gpu,clocks.current.graphics,clocks.max.graphics,memory.total,memory.free,memory.used',
+                   '--format=csv,noheader,nounits'])
+    try:
+        output = cmd()[0]  # Get the first (and only) line of output
+        util, temp, cur_clock, max_clock, mem_total, mem_free, mem_used = map(int, output.split(', '))
+        gpu['status'] = {
+            'load': util / 100.0,  # Convert percentage to decimal
+            'temperature': temp
+        }
+        gpu['freq'] = {
+            'cur': cur_clock * 1000,  # Convert MHz to kHz
+            'max': max_clock * 1000
+        }
+        gpu['memory'] = {
+            'total': mem_total,
+            'free': mem_free,
+            'used': mem_used
+        }
+    except (OSError, Command.CommandException, ValueError) as e:
+        logger.error(f"Failed to get GPU information from nvidia-smi for GPU {gpu_id}: {e}")
+        gpu['status']['error'] = 'Failed to read GPU status'
+    return gpu
 
 
 class GPU(GenericInterface):
@@ -327,23 +367,22 @@ class GPUService(object):
 
     def get_status(self):
         gpu_list = {}
-        # Read iGPU frequency
         for name, data in self._gpu_list.items():
-            # Initialize GPU status
-            gpu = {'type': data['type']}
-            # Detect frequency and load
+            gpu = {'type': data['type'], 'status': {'load': 0.0}}  # Initialize with default load
             if gpu['type'] == 'integrated':
-                # Read status GPU
-                gpu['status'] = igpu_read_status(data['path'])
-                # Read frequency
+                gpu['status'].update(igpu_read_status(data['path']))
                 gpu['freq'] = igpu_read_freq(data['frq_path'])
-                # Read power control status
                 if os.access(data['path'] + "/power/control", os.R_OK):
                     with open(data['path'] + "/power/control", 'r') as f:
                         gpu['power_control'] = f.read().strip()
             elif gpu['type'] == 'discrete':
-                logger.info("TODO discrete GPU")
-            # Load all status in GPU
+                gpu_id = name.split()[-1]  # Extract GPU number
+                dgpu_status = dgpu_read_status(gpu_id)
+                gpu['status'].update(dgpu_status.get('status', {}))
+                gpu['freq'] = dgpu_status.get('freq', {})
+                gpu['memory'] = dgpu_status.get('memory', {})
             gpu_list[name] = gpu
+        if not gpu_list:
+            gpu_list['GPU'] = {'type': 'unknown', 'status': {'load': 0.0}}
         return gpu_list
 # EOF

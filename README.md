@@ -101,6 +101,14 @@ You can try running this command
 docker run --rm -it -v /run/jtop.sock:/run/jtop.sock rbonghi/jetson_stats:latest
 ```
 
+If you make local changes, run:
+
+```console
+sudo pip install -e .
+sudo systemctl restart jtop.service
+jtop
+```
+
 More information available at [_docker_](https://rnext.it/jetson_stats/docker.html) documentation page.
 
 ## Sponsorship
